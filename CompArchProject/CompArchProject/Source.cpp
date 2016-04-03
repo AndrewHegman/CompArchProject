@@ -5,6 +5,8 @@
 using namespace std;
 
 #define INSTRUCTION_LEN 16
+#define VERBOSE_OUTPUT true
+
 typedef enum OPCODE{
 	ADD,
 	SUB,
@@ -28,6 +30,20 @@ typedef enum INSTRUCTION_TYPE{
 	R_TYPE,
 	I_TYPE,
 	J_TYPE,
+};
+
+typedef enum REGISTER_ENUM{
+	zero_reg,
+	a0_reg,
+	a1_reg,
+	v0_reg,
+	v1_reg,
+	v2_reg,
+	v3_reg,
+	t0_reg,
+	t1_reg,
+	t2_reg,
+	t3_reg
 };
 
 typedef enum BUFFER{
@@ -67,8 +83,9 @@ void InstructionExecute_I(INSTRUCTION*);
 void InstructionExecute_J(INSTRUCTION*);
 void InstructionMem(INSTRUCTION*);
 void InstructionWriteBack(INSTRUCTION*);
-
+void PrintRegisters();
 void RegisterInit(INSTRUCTION*);
+string RegisterNumberToName(int);
 
 REGISTER zero;
 REGISTER a0;
@@ -99,8 +116,7 @@ int main(void){
 	programFile.open("program.txt", ios::in);
 
 	//This finds the number of lines in the file
-	while(!programFile.eof()){
-		getline(programFile,line);
+	while(programFile.get() != -1){
 		instructionCount++;
 	}
 	programFile.close();
@@ -112,50 +128,37 @@ int main(void){
 	programFile.open("program.txt", ios::in);
 	while(!programFile.eof()){
 		programFile.read(ptr, INSTRUCTION_LEN);
-		//cout<<strtol(ptr, &nptr, 2)<<endl;
 		instructionMemory[i] = strtol(ptr, &nptr, 2);
 		i++;
 	}
-	for(i=0; i<instructionCount; i++){
-		cout<<instructionMemory[i]<<endl;;
-	}
+	
 	RegisterInit(&testInstruction);
-	/*
-	cout<<"Rs: "<<testInstruction.rs.number<<endl;
-	cout<<"Rs value: "<<testInstruction.rs.value<<endl;
-	cout<<"Rt: "<<testInstruction.rt.number<<endl;
-	cout<<"Rt value: "<<testInstruction.rt.value<<endl;
-	cout<<"Rd: "<<testInstruction.rd.number<<endl;
-	cout<<"Rd value: "<<testInstruction.rd.value<<endl;
-	system("PAUSE");
-	*/
 	InstructionFetch(instructionMemory, 0, &testInstruction);
-	//cout<<"RawFunction: "<<testInstruction.rawFunction<<endl;
 	InstructionDecode(&testInstruction);
 	InstructionExecute(&testInstruction);
+	InstructionMem(&testInstruction);
 	InstructionWriteBack(&testInstruction);
-	cout<<"Function: "<<testInstruction.func<<endl;
-	cout<<"Rs: "<<testInstruction.rs.number<<endl;
-	cout<<"Rs value: "<<testInstruction.rs.value<<endl;
-	cout<<"Rt: "<<testInstruction.rt.number<<endl;
-	cout<<"Rt value: "<<testInstruction.rt.value<<endl;
-	cout<<"Rd: "<<testInstruction.rd.number<<endl;
-	cout<<"Rd value: "<<RegisterArray[7].value<<endl;
+	//PrintRegisters();
 	system("PAUSE");
 	return(0);
 }
 
 
 void InstructionFetch(int instructionMemory[], int PC, INSTRUCTION *currInstruction){
-	//cout<<"test: "<<instructionMemory[PC]<<endl;
 	currInstruction->rawFunction = instructionMemory[PC];
-	//cout<<"test2: "<<currInstruction->rawFunction<<endl;
+	if(VERBOSE_OUTPUT){
+		cout<<"----------FETCH----------"<<endl;
+		cout<<"Instruction fetched: "<<currInstruction->rawFunction<<endl;
+	}
 }
 
 void InstructionDecode(INSTRUCTION *currInstruction){
 	//Get the opcode--always the first 4 bits
 	//But it just so happens that our ENUM perfectly matches the 
 	//opcode number..I THINK
+	if(VERBOSE_OUTPUT){
+		cout<<"----------DECODE----------"<<endl;
+	}
 	int temp;
 	temp = (currInstruction->rawFunction) & 0xF000;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
 	currInstruction->func = static_cast<OPCODE>(temp);
@@ -164,10 +167,15 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 	if(currInstruction->func == ADD || (currInstruction->func == SUB || (currInstruction->func == SLL || (currInstruction->func == SRL || (currInstruction->func == NOR || (currInstruction->func == OR || (currInstruction->func == XOR))))))){
 		//Its an R-type
 		currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
-		cout<<"*"<<currInstruction->rs.number<<endl;
 		currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
 		currInstruction->rd.number = (currInstruction->rawFunction) & 0x000F;
 		currInstruction->type = R_TYPE;
+		if(VERBOSE_OUTPUT){
+			cout<<"R-type instruction"<<endl;
+			cout<<"rs: "<<RegisterNumberToName(currInstruction->rs.number)<<"("<<currInstruction->rs.number<<")"<<endl;
+			cout<<"rt: "<<RegisterNumberToName(currInstruction->rt.number)<<"("<<currInstruction->rt.number<<")"<<endl;
+			cout<<"rd: "<<RegisterNumberToName(currInstruction->rd.number)<<"("<<currInstruction->rd.number<<")"<<endl;
+		}
 	}
 	else if(currInstruction->func == ADDI || (currInstruction->func == ORI || (currInstruction->func == LW || (currInstruction->func == SW || (currInstruction->func == BEQ || (currInstruction->func == BLTZ || (currInstruction->func == BLT))))))){
 		//Its an I-type
@@ -175,15 +183,28 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 		currInstruction->rt.number = (currInstruction->rawFunction) & 0x0F00;
 		currInstruction->immediate = (currInstruction->rawFunction) & 0x000F;
 		currInstruction->type = I_TYPE;
+		if(VERBOSE_OUTPUT){
+			cout<<"I-type instruction"<<endl;
+			cout<<"rs: "<<RegisterNumberToName(currInstruction->rs.number)<<"("<<currInstruction->rs.number<<")"<<endl;
+			cout<<"rt: "<<RegisterNumberToName(currInstruction->rt.number)<<"("<<currInstruction->rt.number<<")"<<endl;
+			cout<<"Immediate: "<<currInstruction->immediate<<endl;
+		}
 	}
 	else if(currInstruction->func == J){
 		//Its an J-type
 		currInstruction->immediate = (currInstruction->rawFunction) & 0x03FF;
 		currInstruction->type = J_TYPE;
+		if(VERBOSE_OUTPUT){
+			cout<<"J-type instruction"<<endl;
+			cout<<"Immediate: "<<currInstruction->immediate<<endl;
+		}
 	}
 }
 
 void InstructionExecute(INSTRUCTION *currInstruction){
+	if(VERBOSE_OUTPUT){
+		cout<<"----------EXECUTE----------"<<endl;
+	}
 	switch(currInstruction->type){
 		case R_TYPE:
 			InstructionExecute_R(currInstruction);
@@ -200,32 +221,48 @@ void InstructionExecute(INSTRUCTION *currInstruction){
 void InstructionExecute_R(INSTRUCTION *currInstruction){
 	switch(currInstruction->func){
 		case ADD:
+			if(VERBOSE_OUTPUT)
+			cout<<"ADD";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value + RegisterArray[currInstruction->rt.number].value;
-			//cout<<RegisterArray[currInstruction->rs.number].value<<endl;
-			//cout<<RegisterArray[currInstruction->rt.number].value<<endl;
-			//cout<<"**"<<currInstruction->tempMem<<endl;
 			break;
 		case SUB:
+			if(VERBOSE_OUTPUT)
+			cout<<"SUB";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value - RegisterArray[currInstruction->rt.number].value;
 			break;
 		case SLL:
+			if(VERBOSE_OUTPUT)
+			cout<<"SLL";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value << RegisterArray[currInstruction->rt.number].value;
 			break;
 		case SRL:
+			if(VERBOSE_OUTPUT)
+			cout<<"SRL";
 			currInstruction->tempMem	= RegisterArray[currInstruction->rs.number].value >> RegisterArray[currInstruction->rt.number].value;
 			break;
 		case AND:
+			if(VERBOSE_OUTPUT)
+			cout<<"AND";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value & RegisterArray[currInstruction->rt.number].value;
 			break;
 		case NOR:
-			currInstruction->tempMem = ~(RegisterArray[currInstruction->rs.number].value | RegisterArray[currInstruction->rt.number].value;
+			if(VERBOSE_OUTPUT)
+			cout<<"NOR";
+			currInstruction->tempMem = ~(RegisterArray[currInstruction->rs.number].value | RegisterArray[currInstruction->rt.number].value);
 			break;
 		case OR:
+			if(VERBOSE_OUTPUT)
+			cout<<"OR";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value | RegisterArray[currInstruction->rt.number].value;
 			break;
 		case XOR:
+			if(VERBOSE_OUTPUT)
+			cout<<"XOR";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value ^ RegisterArray[currInstruction->rt.number].value;
 			break;
+	}
+	if(VERBOSE_OUTPUT){
+		cout<<" $"<<RegisterNumberToName(currInstruction->rd.number)<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<", $"<<RegisterNumberToName(currInstruction->rd.number)<<endl;
 	}
 }
 
@@ -235,7 +272,7 @@ void InstructionExecute_I(INSTRUCTION *currInstruction){
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value + currInstruction->immediate;
 			break;
 		case ORI:
-			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value - currInstruction->immediate;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value | currInstruction->immediate;
 			break;
 		case LW:
 			
@@ -267,52 +304,137 @@ void InstructionExecute_J(INSTRUCTION *currInstruction){
 }
 
 void InstructionMem(INSTRUCTION *currInstruction){
+	if(VERBOSE_OUTPUT)
+		cout<<"----------MEM----------"<<endl;
 	if(currInstruction->type == R_TYPE || (currInstruction->type == I_TYPE)){
-		//do nothing
+		if(VERBOSE_OUTPUT)
+			cout<<"Not used in this instruction"<<endl;
 	}
 }
 
 void InstructionWriteBack(INSTRUCTION *currInstruction){
+	if(VERBOSE_OUTPUT)
+		cout<<"----------WRITE BACK----------"<<endl;
 	if(currInstruction->type == R_TYPE || (currInstruction->type == I_TYPE)){
 		currInstruction->rd.value = currInstruction->tempMem;	//<--I don't know if this line is necessary anymore
 		RegisterArray[currInstruction->rd.number].value = currInstruction->tempMem;
 	}
+	if(VERBOSE_OUTPUT)
+		cout<<"Rd"<<"($"<<RegisterNumberToName(currInstruction->rd.number)<<"): "<<RegisterArray[currInstruction->rd.number].value<<endl;
 }
 
 void RegisterInit(INSTRUCTION *currInstruction){
 	
-	RegisterArray[0].number = 0x00;
-	RegisterArray[0].value = 0x00;
+	RegisterArray[zero_reg].number = 0x00;
+	RegisterArray[zero_reg].value = 0x00;
 
-	RegisterArray[1].number = 0x01;
-	RegisterArray[1].value = 0x00;
+	RegisterArray[a0_reg].number = 0x01;
+	RegisterArray[a0_reg].value = 0x00;
 
-	RegisterArray[2].number = 0x02;
-	RegisterArray[2].value = 0x00;
+	RegisterArray[a1_reg].number = 0x02;
+	RegisterArray[a1_reg].value = 0x00;
 
-	RegisterArray[3].number = 0x03;
-	RegisterArray[3].value = 0x00;
+	RegisterArray[v0_reg].number = 0x03;
+	RegisterArray[v0_reg].value = 0x00;
 
-	RegisterArray[4].number = 0x04;
-	RegisterArray[4].value = 0x00;
+	RegisterArray[v1_reg].number = 0x04;
+	RegisterArray[v1_reg].value = 0x00;
 
-	RegisterArray[5].number = 0x05;
-	RegisterArray[5].value = 0x00;
+	RegisterArray[v2_reg].number = 0x05;
+	RegisterArray[v2_reg].value = 0x00;
 
-	RegisterArray[6].number = 0x06;
-	RegisterArray[6].value = 0x00;
+	RegisterArray[v3_reg].number = 0x06;
+	RegisterArray[v3_reg].value = 0x00;
 
-	RegisterArray[7].number = 0x07;
-	RegisterArray[7].value = 0x00;
+	RegisterArray[t0_reg].number = 0x07;
+	RegisterArray[t0_reg].value = 0x00;
 
-	RegisterArray[8].number = 0x08;
-	RegisterArray[8].value = 0x01;
+	RegisterArray[t1_reg].number = 0x08;
+	RegisterArray[t1_reg].value = 0x02;
 
-	RegisterArray[9].number = 0x09;
-	RegisterArray[9].value = 0x02;
+	RegisterArray[t2_reg].number = 0x09;
+	RegisterArray[t2_reg].value = 0x01;
 
-	RegisterArray[10].number = 0x0A;
-	RegisterArray[10].value = 0x00;
+	RegisterArray[t3_reg].number = 0x0A;
+	RegisterArray[t3_reg].value = 0x00;
 }
 //So Dr Sherif was saying that if you try to write to the zero register, nothing happens, it just doesn't write to the zero register. To emulate this behavior, I think we should just check
 //the destination register in the WB stage, and if the destination register is the zero register, we just ignore the instruction and carry on. Thoughts? 
+
+void PrintRegisters(){
+	cout<<"Zero"<<endl;
+	cout<<"Address: "<<RegisterArray[zero_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[zero_reg].value<<"\n"<<endl;
+	cout<<"a0"<<endl;
+	cout<<"Address: "<<RegisterArray[a0_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[a0_reg].value<<"\n"<<endl;
+	cout<<"a1"<<endl;
+	cout<<"Address: "<<RegisterArray[a1_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[a1_reg].value<<"\n"<<endl;
+	cout<<"v0"<<endl;
+	cout<<"Address: "<<RegisterArray[v0_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[v0_reg].value<<"\n"<<endl;
+	cout<<"v1"<<endl;
+	cout<<"Address: "<<RegisterArray[v1_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[v1_reg].value<<"\n"<<endl;
+	cout<<"v2"<<endl;
+	cout<<"Address: "<<RegisterArray[v2_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[v2_reg].value<<"\n"<<endl;
+	cout<<"v3"<<endl;
+	cout<<"Address: "<<RegisterArray[v3_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[v3_reg].value<<"\n"<<endl;
+	cout<<"t0"<<endl;
+	cout<<"Address: "<<RegisterArray[t0_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[t0_reg].value<<"\n"<<endl;
+	cout<<"t1"<<endl;
+	cout<<"Address: "<<RegisterArray[t1_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[t1_reg].value<<"\n"<<endl;
+	cout<<"t2"<<endl;
+	cout<<"Address: "<<RegisterArray[t2_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[t2_reg].value<<"\n"<<endl;
+	cout<<"t3"<<endl;
+	cout<<"Address: "<<RegisterArray[t3_reg].number<<endl;
+	cout<<"Value: "<<RegisterArray[t3_reg].value<<"\n"<<endl;
+	
+}
+
+string RegisterNumberToName(int regNum){
+	switch(regNum){
+	case 0:
+		return("zero");
+		break;
+	case 1:
+		return("a0");
+		break;
+	case 2:
+		return("a1");
+		break;
+	case 3:
+		return("v0");
+		break;
+	case 4:
+		return("v1");
+		break;
+	case 5:
+		return("v2");
+		break;
+	case 6:
+		return("v3");
+		break;
+	case 7:
+		return("t0");
+		break;
+	case 8:
+		return("t1");
+		break;
+	case 9:
+		return("t2");
+		break;
+	case 10:
+		return("t3");
+		break;
+	default:
+		return("Invalid register number!");
+		break;
+	}
+}
