@@ -160,9 +160,10 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 		cout<<"----------DECODE----------"<<endl;
 	}
 	int temp;
-	temp = (currInstruction->rawFunction) & 0xF000;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
+	temp = ((currInstruction->rawFunction) & 0xF000)>>0x0C;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
 	currInstruction->func = static_cast<OPCODE>(temp);
-
+	if(VERBOSE_OUTPUT)
+		cout<<"Function: "<<currInstruction->func<<endl;
 	//Need to figure out if the instruction is R-, I-, or J-type
 	if(currInstruction->func == ADD || (currInstruction->func == SUB || (currInstruction->func == SLL || (currInstruction->func == SRL || (currInstruction->func == NOR || (currInstruction->func == OR || (currInstruction->func == XOR))))))){
 		//Its an R-type
@@ -262,7 +263,7 @@ void InstructionExecute_R(INSTRUCTION *currInstruction){
 			break;
 	}
 	if(VERBOSE_OUTPUT){
-		cout<<" $"<<RegisterNumberToName(currInstruction->rd.number)<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<", $"<<RegisterNumberToName(currInstruction->rd.number)<<endl;
+		cout<<" $"<<RegisterNumberToName(currInstruction->rd.number)<<"("<<RegisterArray[currInstruction->rd.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<endl;
 	}
 }
 
