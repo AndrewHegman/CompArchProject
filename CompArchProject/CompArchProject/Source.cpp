@@ -1,15 +1,17 @@
 #include <iostream>
 #include <fstream>
 #include <string>
-
+#include <typeinfo>
 using namespace std;
 
+#define INSTRUCTION_LEN 16
 typedef enum OPCODE{
 	ADD,
 	SUB,
 	ADDI,
 	SLL,
 	SRL,
+	AND,
 	NOR,
 	OR,
 	ORI,
@@ -23,9 +25,9 @@ typedef enum OPCODE{
 };
 
 typedef enum INSTRUCTION_TYPE{
-	R,
-	I,
-	J,
+	R_TYPE,
+	I_TYPE,
+	J_TYPE,
 };
 
 typedef enum BUFFER{
@@ -35,13 +37,18 @@ typedef enum BUFFER{
 	MEMORY_WRITEBACK
 };
 
+struct REGISTER{
+	int number;		//this is the memory position
+	int value;
+};
+
 struct INSTRUCTION{
-	int rd;
-	int rs;
-	int rt;
+	REGISTER rd;
+	REGISTER rs;
+	REGISTER rt;
 	int tempMem;			//This will be used to store the values after the EXE stage and before the WB stages. So lets say you want to do an ADD instruction; the sum of RS and RT will be stored in this register until the WB stage
 	int immediate;
-	string rawFunction;		//This is the line of code straight out of the text file
+	int rawFunction;		//This is the line of code straight out of the text file
 	OPCODE func;			//This will be the actual function of the line of code. I *think* this is assigned in the InstructionDecode stage
 	INSTRUCTION_TYPE type;
 	//We can either add a bunch of entries here for the different
@@ -52,20 +59,16 @@ struct INSTRUCTION{
 	//idea thoug...
 };
 
-struct REGISTER{
-	int number;		//this is the memory position
-	int value;
-};
+void InstructionFetch(int[], int, INSTRUCTION*);
+void InstructionDecode(INSTRUCTION*);
+void InstructionExecute(INSTRUCTION*);
+void InstructionExecute_R(INSTRUCTION*);
+void InstructionExecute_I(INSTRUCTION*);
+void InstructionExecute_J(INSTRUCTION*);
+void InstructionMem(INSTRUCTION*);
+void InstructionWriteBack(INSTRUCTION*);
 
-
-void InstructionFetch(string[], int, INSTRUCTION);
-void InstructionDecode(INSTRUCTION);
-void InstructionExecute(INSTRUCTION);
-void InstructionExecute_R(INSTRUCTION);
-void InstructionExecute_I(INSTRUCTION);
-void InstructionExecute_J(INSTRUCTION);
-
-void RegisterInit();
+void RegisterInit(INSTRUCTION*);
 
 REGISTER zero;
 REGISTER a0;
@@ -78,49 +81,22 @@ REGISTER t0;
 REGISTER t1;
 REGISTER t2;
 REGISTER t3;
-/*
-//This is the logic I came up with, but IDK where it should go..
-switch(OpCode){
-case ADD:
-	break;
-case SUB:
-	break;
-case ADDI:
-	break;
-case SLL:
-	break;
-case SRL:
-	break;
-case NOR:
-	break;
-case OR:
-	break;
-case ORI:
-	break;
-case LW:
-	break;
-case SW:
-	break;
-case BEQ:
-	break;
-case BLTZ:
-	break;
-case J:
-	break;
-case BLT:
-	break;
-default:
-}
-*/
+REGISTER RegisterArray[11] = {zero, a0, a1, v0, v1, v2, v3, t0, t1, t2, t3};
+INSTRUCTION testInstruction;
+
 
 
 int main(void){
 	int instructionCount = 0;
 	int i = 0;
-	string* instructionMemory;
+	int* instructionMemory;
+	char* nptr = NULL;
+	char ptr[16];
+	
+	
 	string line;
 	ifstream programFile;
-	programFile.open("name.txt", ios::in);
+	programFile.open("program.txt", ios::in);
 
 	//This finds the number of lines in the file
 	while(!programFile.eof()){
@@ -130,104 +106,136 @@ int main(void){
 	programFile.close();
 
 	//Dynamically allocate memory for array
-	instructionMemory = new string[instructionCount];
-
+	instructionMemory = new int[instructionCount];
 	//Re-open file
 
-	programFile.open("name.txt", ios::in);
+	programFile.open("program.txt", ios::in);
 	while(!programFile.eof()){
-		getline(programFile, instructionMemory[i]);
+		programFile.read(ptr, INSTRUCTION_LEN);
+		//cout<<strtol(ptr, &nptr, 2)<<endl;
+		instructionMemory[i] = strtol(ptr, &nptr, 2);
 		i++;
 	}
+	for(i=0; i<instructionCount; i++){
+		cout<<instructionMemory[i]<<endl;;
+	}
+	RegisterInit(&testInstruction);
+	/*
+	cout<<"Rs: "<<testInstruction.rs.number<<endl;
+	cout<<"Rs value: "<<testInstruction.rs.value<<endl;
+	cout<<"Rt: "<<testInstruction.rt.number<<endl;
+	cout<<"Rt value: "<<testInstruction.rt.value<<endl;
+	cout<<"Rd: "<<testInstruction.rd.number<<endl;
+	cout<<"Rd value: "<<testInstruction.rd.value<<endl;
+	system("PAUSE");
+	*/
+	InstructionFetch(instructionMemory, 0, &testInstruction);
+	//cout<<"RawFunction: "<<testInstruction.rawFunction<<endl;
+	InstructionDecode(&testInstruction);
+	InstructionExecute(&testInstruction);
+	InstructionWriteBack(&testInstruction);
+	cout<<"Function: "<<testInstruction.func<<endl;
+	cout<<"Rs: "<<testInstruction.rs.number<<endl;
+	cout<<"Rs value: "<<testInstruction.rs.value<<endl;
+	cout<<"Rt: "<<testInstruction.rt.number<<endl;
+	cout<<"Rt value: "<<testInstruction.rt.value<<endl;
+	cout<<"Rd: "<<testInstruction.rd.number<<endl;
+	cout<<"Rd value: "<<RegisterArray[7].value<<endl;
 	system("PAUSE");
 	return(0);
 }
 
 
-void InstructionFetch(string instructionMemory, int PC, INSTRUCTION currInstruction){
-	currInstruction.rawFunction = instructionMemory[PC];
+void InstructionFetch(int instructionMemory[], int PC, INSTRUCTION *currInstruction){
+	//cout<<"test: "<<instructionMemory[PC]<<endl;
+	currInstruction->rawFunction = instructionMemory[PC];
+	//cout<<"test2: "<<currInstruction->rawFunction<<endl;
 }
 
-void InstructionDecode(INSTRUCTION currInstruction){
+void InstructionDecode(INSTRUCTION *currInstruction){
 	//Get the opcode--always the first 4 bits
 	//But it just so happens that our ENUM perfectly matches the 
 	//opcode number..I THINK
 	int temp;
-	temp = stoi(currInstruction.rawFunction) & 0xF000;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
-	currInstruction.func = static_cast<OPCODE>(temp);
+	temp = (currInstruction->rawFunction) & 0xF000;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
+	currInstruction->func = static_cast<OPCODE>(temp);
 
 	//Need to figure out if the instruction is R-, I-, or J-type
-	if(currInstruction.func == ADD || (currInstruction.func == SUB || (currInstruction.func == SLL || (currInstruction.func == SRL || (currInstruction.func == NOR || (currInstruction.func == OR || (currInstruction.func == XOR))))))){
+	if(currInstruction->func == ADD || (currInstruction->func == SUB || (currInstruction->func == SLL || (currInstruction->func == SRL || (currInstruction->func == NOR || (currInstruction->func == OR || (currInstruction->func == XOR))))))){
 		//Its an R-type
-		currInstruction.rs = stoi(currInstruction.rawFunction) & 0x0F00;
-		currInstruction.rt = stoi(currInstruction.rawFunction) & 0x00F0;
-		currInstruction.rd = stoi(currInstruction.rawFunction) & 0x000F;
-		currInstruction.type = R;
+		currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
+		cout<<"*"<<currInstruction->rs.number<<endl;
+		currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
+		currInstruction->rd.number = (currInstruction->rawFunction) & 0x000F;
+		currInstruction->type = R_TYPE;
 	}
-	else if(currInstruction.func == ADDI || (currInstruction.func == ORI || (currInstruction.func == LW || (currInstruction.func == SW || (currInstruction.func == BEQ || (currInstruction.func == BLTZ || (currInstruction.func == BLT))))))){
+	else if(currInstruction->func == ADDI || (currInstruction->func == ORI || (currInstruction->func == LW || (currInstruction->func == SW || (currInstruction->func == BEQ || (currInstruction->func == BLTZ || (currInstruction->func == BLT))))))){
 		//Its an I-type
-		currInstruction.rs = stoi(currInstruction.rawFunction) & 0x0F00;
-		currInstruction.rt = stoi(currInstruction.rawFunction) & 0x0F00;
-		currInstruction.immediate = stoi(currInstruction.rawFunction) & 0x000F;
-		currInstruction.type = I;
+		currInstruction->rs.number = (currInstruction->rawFunction) & 0x0F00;
+		currInstruction->rt.number = (currInstruction->rawFunction) & 0x0F00;
+		currInstruction->immediate = (currInstruction->rawFunction) & 0x000F;
+		currInstruction->type = I_TYPE;
 	}
-	else if(currInstruction.func == J){
+	else if(currInstruction->func == J){
 		//Its an J-type
-		currInstruction.immediate = stoi(currInstruction.rawFunction) & 0x03FF;
-		currInstruction.type = J;
+		currInstruction->immediate = (currInstruction->rawFunction) & 0x03FF;
+		currInstruction->type = J_TYPE;
 	}
 }
 
-void InstructionExecute(INSTRUCTION currInstruction){
-	switch(currInstruction.type){
-		case R:
+void InstructionExecute(INSTRUCTION *currInstruction){
+	switch(currInstruction->type){
+		case R_TYPE:
 			InstructionExecute_R(currInstruction);
 			break;
-		case I:
+		case I_TYPE:
 			InstructionExecute_I(currInstruction);
 			break;
-		case J:
+		case J_TYPE:
 			InstructionExecute_J(currInstruction);
 			break;
 	}
 }
 
-void InstructionExecute_R(INSTRUCTION currInstruction){
-	switch(currInstruction.func){
+void InstructionExecute_R(INSTRUCTION *currInstruction){
+	switch(currInstruction->func){
 		case ADD:
-			currInstruction.tempMem = currInstruction.rs + currInstruction.rt;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value + RegisterArray[currInstruction->rt.number].value;
+			//cout<<RegisterArray[currInstruction->rs.number].value<<endl;
+			//cout<<RegisterArray[currInstruction->rt.number].value<<endl;
+			//cout<<"**"<<currInstruction->tempMem<<endl;
 			break;
 		case SUB:
-			currInstruction.tempMem = currInstruction.rs - currInstruction.rt;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value - RegisterArray[currInstruction->rt.number].value;
 			break;
 		case SLL:
-			currInstruction.tempMem = currInstruction.rs << currInstruction.rt;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value << RegisterArray[currInstruction->rt.number].value;
 			break;
 		case SRL:
-			currInstruction.tempMem	= currInstruction.rs >> currInstruction.rt;
+			currInstruction->tempMem	= RegisterArray[currInstruction->rs.number].value >> RegisterArray[currInstruction->rt.number].value;
 			break;
 		case AND:
-			currInstruction.tempMem = currInstruction.rs & currInstruction.rt;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value & RegisterArray[currInstruction->rt.number].value;
 			break;
 		case NOR:
-			currInstruction.tempMem = ~(currInstruction.rs | currInstruction.rt);
+			currInstruction->tempMem = ~(RegisterArray[currInstruction->rs.number].value | RegisterArray[currInstruction->rt.number].value;
 			break;
 		case OR:
-			currInstruction.tempMem = currInstruction.rs | currInstruction.rt;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value | RegisterArray[currInstruction->rt.number].value;
 			break;
 		case XOR:
-			currInstruction.tempMem = currInstruction.rs ^ currInstruction.rt;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value ^ RegisterArray[currInstruction->rt.number].value;
 			break;
 	}
 }
 
-void InstructionExecute_I(INSTRUCTION currInstruction){
-	switch(currInstruction.func){
+void InstructionExecute_I(INSTRUCTION *currInstruction){
+	switch(currInstruction->func){
 		case ADDI:
-			currInstruction.tempMem = currInstruction.rs + currInstruction.immediate;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value + currInstruction->immediate;
 			break;
 		case ORI:
-			currInstruction.tempMem = currInstruction.rs - currInstruction.immediate;
+			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value - currInstruction->immediate;
 			break;
 		case LW:
 			
@@ -236,51 +244,75 @@ void InstructionExecute_I(INSTRUCTION currInstruction){
 			
 			break;
 		case BEQ:
-			if(currInstruction.rs == currInstruction.rt){
+			if(RegisterArray[currInstruction->rs.number].value == RegisterArray[currInstruction->rt.number].value){
 				//need to change PC here
 			}
 			break;
 		case BLTZ:
-			if(currInstruction.rs < zero.value){
+			if(RegisterArray[currInstruction->rs.number].value < zero.value){
 				//need to change PC here
 			}
 			break;
 		case BLT:
-			if(currInstruction.rs < currInstruction.rt){
+			if(RegisterArray[currInstruction->rs.number].value < RegisterArray[currInstruction->rt.number].value){
 				//need to change PC here
 			}
 			break;
 	}
 }
 
-void InstructionExecute_J(INSTRUCTION currInstruction){
+void InstructionExecute_J(INSTRUCTION *currInstruction){
 	//This will only be a jump instruction
 	//need to change PC here
 }
 
-void RegisterInit(){
-	zero.number = 0x00;
-	zero.value = 0x00;
+void InstructionMem(INSTRUCTION *currInstruction){
+	if(currInstruction->type == R_TYPE || (currInstruction->type == I_TYPE)){
+		//do nothing
+	}
+}
 
-	a0.number = 0x01;
+void InstructionWriteBack(INSTRUCTION *currInstruction){
+	if(currInstruction->type == R_TYPE || (currInstruction->type == I_TYPE)){
+		currInstruction->rd.value = currInstruction->tempMem;	//<--I don't know if this line is necessary anymore
+		RegisterArray[currInstruction->rd.number].value = currInstruction->tempMem;
+	}
+}
 
-	a1.number = 0x02;
+void RegisterInit(INSTRUCTION *currInstruction){
+	
+	RegisterArray[0].number = 0x00;
+	RegisterArray[0].value = 0x00;
 
-	v0.number = 0x03;
+	RegisterArray[1].number = 0x01;
+	RegisterArray[1].value = 0x00;
 
-	v1.number = 0x04;
+	RegisterArray[2].number = 0x02;
+	RegisterArray[2].value = 0x00;
 
-	v2.number = 0x05;
+	RegisterArray[3].number = 0x03;
+	RegisterArray[3].value = 0x00;
 
-	v3.number = 0x06;
+	RegisterArray[4].number = 0x04;
+	RegisterArray[4].value = 0x00;
 
-	t0.number = 0x07;
+	RegisterArray[5].number = 0x05;
+	RegisterArray[5].value = 0x00;
 
-	t1.number = 0x08;
+	RegisterArray[6].number = 0x06;
+	RegisterArray[6].value = 0x00;
 
-	t2.number = 0x09;
+	RegisterArray[7].number = 0x07;
+	RegisterArray[7].value = 0x00;
 
-	t3.number = 0x0A;
+	RegisterArray[8].number = 0x08;
+	RegisterArray[8].value = 0x01;
+
+	RegisterArray[9].number = 0x09;
+	RegisterArray[9].value = 0x02;
+
+	RegisterArray[10].number = 0x0A;
+	RegisterArray[10].value = 0x00;
 }
 //So Dr Sherif was saying that if you try to write to the zero register, nothing happens, it just doesn't write to the zero register. To emulate this behavior, I think we should just check
 //the destination register in the WB stage, and if the destination register is the zero register, we just ignore the instruction and carry on. Thoughts? 
