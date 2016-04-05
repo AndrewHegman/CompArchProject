@@ -23,13 +23,15 @@ typedef enum OPCODE{
 	BEQ,
 	BLTZ,
 	J,
-	BLT
+	BLT,
+	NONE_OPCODE	//Used instead of 'NULL' because 'NULL' is interpreted as an int
 };
 
 typedef enum INSTRUCTION_TYPE{
 	R_TYPE,
 	I_TYPE,
 	J_TYPE,
+	NONE_TYPE	//Used instead of 'NULL' because 'NULL' is interpreted as an int
 };
 
 typedef enum REGISTER_ENUM{
@@ -45,14 +47,14 @@ typedef enum REGISTER_ENUM{
 	t2_reg,
 	t3_reg
 };
-
+/*
 typedef enum BUFFER{
 	FETCH_DECODE,
 	DECODE_EXECUTE,
 	EXECUTE_MEMORY,
 	MEMORY_WRITEBACK
 };
-
+*/
 struct REGISTER{
 	int number;		//this is the memory position
 	int value;
@@ -85,6 +87,7 @@ void InstructionMem(INSTRUCTION*);
 void InstructionWriteBack(INSTRUCTION*);
 void PrintRegisters();
 void RegisterInit(INSTRUCTION*);
+void ExecuteProgram(int[]);
 string RegisterNumberToName(int);
 
 REGISTER zero;
@@ -122,7 +125,7 @@ int main(void){
 	programFile.close();
 
 	//Dynamically allocate memory for array
-	instructionMemory = new int[instructionCount];
+	instructionMemory = new int[instructionCount+1];
 	//Re-open file
 
 	programFile.open("program.txt", ios::in);
@@ -131,24 +134,65 @@ int main(void){
 		instructionMemory[i] = strtol(ptr, &nptr, 2);
 		i++;
 	}
-	
+	instructionMemory[i+1] = NULL;
 	RegisterInit(&testInstruction);
-	InstructionFetch(instructionMemory, 0, &testInstruction);
-	InstructionDecode(&testInstruction);
-	InstructionExecute(&testInstruction);
-	InstructionMem(&testInstruction);
-	InstructionWriteBack(&testInstruction);
-	//PrintRegisters();
+	ExecuteProgram(instructionMemory);
+	PrintRegisters();
 	system("PAUSE");
 	return(0);
 }
 
-
+void ExecuteProgram(int instructionMemory[]){
+	int PC = 0;
+	int CLK = 0;
+	bool lastInstructionFetched = false;
+	int continueLoop = 0;
+	INSTRUCTION FETCH_DECODE;
+	INSTRUCTION DECODE_EXECUTE;
+	INSTRUCTION EXECUTE_MEMORY;
+	INSTRUCTION MEMORY_WRITEBACK;
+	do{
+		if(CLK == 0){
+			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+		}else if(CLK == 1){
+			DECODE_EXECUTE = FETCH_DECODE;
+			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+			InstructionDecode(&DECODE_EXECUTE);
+		}else if(CLK == 2){
+			EXECUTE_MEMORY = DECODE_EXECUTE;
+			DECODE_EXECUTE = FETCH_DECODE;
+			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+			InstructionDecode(&DECODE_EXECUTE);
+			InstructionExecute(&EXECUTE_MEMORY);
+		}else if(CLK >= 3){
+			MEMORY_WRITEBACK = EXECUTE_MEMORY;
+			EXECUTE_MEMORY = DECODE_EXECUTE;
+			DECODE_EXECUTE = FETCH_DECODE;
+			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+			InstructionDecode(&DECODE_EXECUTE);
+			InstructionExecute(&EXECUTE_MEMORY);
+			InstructionMem(&MEMORY_WRITEBACK);
+			InstructionWriteBack(&MEMORY_WRITEBACK);
+		}
+		CLK++;
+		if(instructionMemory[PC+1] == NULL){	//Without forwarding, this passes when all instructions have been fetched. Then we need 3 more cycles to clear the rest of the instructions
+			lastInstructionFetched = true;
+			continueLoop++;
+		}else{
+			PC++;
+		}
+	}while(continueLoop != 3);
+}
 void InstructionFetch(int instructionMemory[], int PC, INSTRUCTION *currInstruction){
-	currInstruction->rawFunction = instructionMemory[PC];
+	try{
+		currInstruction->rawFunction = instructionMemory[PC];
+	}catch(out_of_range){
+		currInstruction->rawFunction = NULL;
+	}
 	if(VERBOSE_OUTPUT){
 		cout<<"----------FETCH----------"<<endl;
 		cout<<"Instruction fetched: "<<currInstruction->rawFunction<<endl;
+		cout<<"-------------------------\n\n"<<endl;
 	}
 }
 
@@ -158,53 +202,61 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 	//opcode number..I THINK
 	if(VERBOSE_OUTPUT){
 		cout<<"----------DECODE----------"<<endl;
+		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
 	}
-	int temp;
-	temp = ((currInstruction->rawFunction) & 0xF000)>>0x0C;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
-	currInstruction->func = static_cast<OPCODE>(temp);
+	if(currInstruction->rawFunction != NULL){
+		int temp;
+		temp = ((currInstruction->rawFunction) & 0xF000)>>0x0C;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
+		currInstruction->func = static_cast<OPCODE>(temp);
+		if(VERBOSE_OUTPUT)
+			cout<<"Function: "<<currInstruction->func<<endl;
+		//Need to figure out if the instruction is R-, I-, or J-type
+		if(currInstruction->func == ADD || (currInstruction->func == SUB || (currInstruction->func == SLL || (currInstruction->func == SRL || (currInstruction->func == AND | (currInstruction->func == NOR || (currInstruction->func == OR || (currInstruction->func == XOR)))))))){
+			//Its an R-type
+			currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
+			currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
+			currInstruction->rd.number = (currInstruction->rawFunction) & 0x000F;
+			currInstruction->type = R_TYPE;
+			if(VERBOSE_OUTPUT){
+				cout<<"R-type instruction"<<endl;
+				cout<<"rs: "<<RegisterNumberToName(currInstruction->rs.number)<<"("<<currInstruction->rs.number<<")"<<endl;
+				cout<<"rt: "<<RegisterNumberToName(currInstruction->rt.number)<<"("<<currInstruction->rt.number<<")"<<endl;
+				cout<<"rd: "<<RegisterNumberToName(currInstruction->rd.number)<<"("<<currInstruction->rd.number<<")"<<endl;
+			}
+		}
+		else if(currInstruction->func == ADDI || (currInstruction->func == ORI || (currInstruction->func == LW || (currInstruction->func == SW || (currInstruction->func == BEQ || (currInstruction->func == BLTZ || (currInstruction->func == BLT))))))){
+			//Its an I-type
+			currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
+			currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
+			currInstruction->immediate = (currInstruction->rawFunction) & 0x000F;
+			currInstruction->type = I_TYPE;
+			if(VERBOSE_OUTPUT){
+				cout<<"I-type instruction"<<endl;
+				cout<<"rs: "<<RegisterNumberToName(currInstruction->rs.number)<<"("<<currInstruction->rs.number<<")"<<endl;
+				cout<<"rt: "<<RegisterNumberToName(currInstruction->rt.number)<<"("<<currInstruction->rt.number<<")"<<endl;
+				cout<<"Immediate: "<<currInstruction->immediate<<endl;
+			}
+		}
+		else if(currInstruction->func == J){
+			//Its an J-type
+			currInstruction->immediate = (currInstruction->rawFunction) & 0x03FF;
+			currInstruction->type = J_TYPE;
+			if(VERBOSE_OUTPUT){
+				cout<<"J-type instruction"<<endl;
+				cout<<"Immediate: "<<currInstruction->immediate<<endl;
+			}
+		}
+	}else{
+		currInstruction->func = NONE_OPCODE;
+	}
 	if(VERBOSE_OUTPUT)
-		cout<<"Function: "<<currInstruction->func<<endl;
-	//Need to figure out if the instruction is R-, I-, or J-type
-	if(currInstruction->func == ADD || (currInstruction->func == SUB || (currInstruction->func == SLL || (currInstruction->func == SRL || (currInstruction->func == AND | (currInstruction->func == NOR || (currInstruction->func == OR || (currInstruction->func == XOR)))))))){
-		//Its an R-type
-		currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
-		currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
-		currInstruction->rd.number = (currInstruction->rawFunction) & 0x000F;
-		currInstruction->type = R_TYPE;
-		if(VERBOSE_OUTPUT){
-			cout<<"R-type instruction"<<endl;
-			cout<<"rs: "<<RegisterNumberToName(currInstruction->rs.number)<<"("<<currInstruction->rs.number<<")"<<endl;
-			cout<<"rt: "<<RegisterNumberToName(currInstruction->rt.number)<<"("<<currInstruction->rt.number<<")"<<endl;
-			cout<<"rd: "<<RegisterNumberToName(currInstruction->rd.number)<<"("<<currInstruction->rd.number<<")"<<endl;
-		}
-	}
-	else if(currInstruction->func == ADDI || (currInstruction->func == ORI || (currInstruction->func == LW || (currInstruction->func == SW || (currInstruction->func == BEQ || (currInstruction->func == BLTZ || (currInstruction->func == BLT))))))){
-		//Its an I-type
-		currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
-		currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
-		currInstruction->immediate = (currInstruction->rawFunction) & 0x000F;
-		currInstruction->type = I_TYPE;
-		if(VERBOSE_OUTPUT){
-			cout<<"I-type instruction"<<endl;
-			cout<<"rs: "<<RegisterNumberToName(currInstruction->rs.number)<<"("<<currInstruction->rs.number<<")"<<endl;
-			cout<<"rt: "<<RegisterNumberToName(currInstruction->rt.number)<<"("<<currInstruction->rt.number<<")"<<endl;
-			cout<<"Immediate: "<<currInstruction->immediate<<endl;
-		}
-	}
-	else if(currInstruction->func == J){
-		//Its an J-type
-		currInstruction->immediate = (currInstruction->rawFunction) & 0x03FF;
-		currInstruction->type = J_TYPE;
-		if(VERBOSE_OUTPUT){
-			cout<<"J-type instruction"<<endl;
-			cout<<"Immediate: "<<currInstruction->immediate<<endl;
-		}
-	}
+		cout<<"--------------------------\n\n"<<endl;
 }
 
 void InstructionExecute(INSTRUCTION *currInstruction){
 	if(VERBOSE_OUTPUT){
 		cout<<"----------EXECUTE----------"<<endl;
+		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
 	}
 	switch(currInstruction->type){
 		case R_TYPE:
@@ -215,6 +267,9 @@ void InstructionExecute(INSTRUCTION *currInstruction){
 			break;
 		case J_TYPE:
 			InstructionExecute_J(currInstruction);
+			break;
+		case NONE_TYPE:
+			currInstruction->tempMem = NULL;
 			break;
 	}
 }
@@ -264,6 +319,7 @@ void InstructionExecute_R(INSTRUCTION *currInstruction){
 	}
 	if(VERBOSE_OUTPUT){
 		cout<<" $"<<RegisterNumberToName(currInstruction->rd.number)<<"("<<RegisterArray[currInstruction->rd.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<endl;
+		cout<<"---------------------------\n\n"<<endl;
 	}
 }
 
@@ -311,6 +367,7 @@ void InstructionExecute_I(INSTRUCTION *currInstruction){
 	}
 	if(VERBOSE_OUTPUT)
 		cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", "<<currInstruction->immediate<<endl;
+		cout<<"---------------------------\n\n"<<endl;
 }
 
 void InstructionExecute_J(INSTRUCTION *currInstruction){
@@ -319,17 +376,23 @@ void InstructionExecute_J(INSTRUCTION *currInstruction){
 }
 
 void InstructionMem(INSTRUCTION *currInstruction){
-	if(VERBOSE_OUTPUT)
+	if(VERBOSE_OUTPUT){
 		cout<<"----------MEM----------"<<endl;
-	if(currInstruction->type == R_TYPE || (currInstruction->type == I_TYPE)){
+		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
+	}
+	if(currInstruction->type == R_TYPE || (currInstruction->type == I_TYPE || (currInstruction->type == NONE_TYPE))){
 		if(VERBOSE_OUTPUT)
 			cout<<"Not used in this instruction"<<endl;
 	}
+	if(VERBOSE_OUTPUT)
+		cout<<"-----------------------\n\n"<<endl;
 }
 
 void InstructionWriteBack(INSTRUCTION *currInstruction){
-	if(VERBOSE_OUTPUT)
+	if(VERBOSE_OUTPUT){
 		cout<<"----------WRITE BACK----------"<<endl;
+		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
+	}
 	if(currInstruction->type == R_TYPE ){
 		currInstruction->rd.value = currInstruction->tempMem;	//<--I don't know if this line is necessary anymore
 		RegisterArray[currInstruction->rd.number].value = currInstruction->tempMem;
@@ -341,6 +404,8 @@ void InstructionWriteBack(INSTRUCTION *currInstruction){
 		if(VERBOSE_OUTPUT)
 			cout<<"Rt"<<"($"<<RegisterNumberToName(currInstruction->rt.number)<<"): "<<RegisterArray[currInstruction->rt.number].value<<endl;
 	}
+	if(VERBOSE_OUTPUT)
+		cout<<"------------------------------\n\n"<<endl;
 	
 }
 
@@ -371,10 +436,10 @@ void RegisterInit(INSTRUCTION *currInstruction){
 	RegisterArray[t0_reg].value = 0x00;
 
 	RegisterArray[t1_reg].number = 0x08;
-	RegisterArray[t1_reg].value = 0x03;
+	RegisterArray[t1_reg].value = 0x00;
 
 	RegisterArray[t2_reg].number = 0x09;
-	RegisterArray[t2_reg].value = 0x01;
+	RegisterArray[t2_reg].value = 0x00;
 
 	RegisterArray[t3_reg].number = 0x0A;
 	RegisterArray[t3_reg].value = 0x00;
