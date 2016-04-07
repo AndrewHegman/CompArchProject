@@ -24,6 +24,7 @@ typedef enum OPCODE{
 	BLTZ,
 	J,
 	BLT,
+	_NOP,
 	NONE_OPCODE	//Used instead of 'NULL' because 'NULL' is interpreted as an int
 };
 
@@ -88,6 +89,9 @@ void InstructionWriteBack(INSTRUCTION*);
 void PrintRegisters();
 void RegisterInit(INSTRUCTION*);
 void ExecuteProgram(int[]);
+void PrintFullInstruction(INSTRUCTION*);
+bool CheckForDataHazard(INSTRUCTION, INSTRUCTION, INSTRUCTION, INSTRUCTION, bool);
+
 string RegisterNumberToName(int);
 
 REGISTER zero;
@@ -146,33 +150,58 @@ void ExecuteProgram(int instructionMemory[]){
 	int PC = 0;
 	int CLK = 0;
 	bool lastInstructionFetched = false;
+	bool DataHazard = false;
 	int continueLoop = 0;
 	INSTRUCTION FETCH_DECODE;
 	INSTRUCTION DECODE_EXECUTE;
 	INSTRUCTION EXECUTE_MEMORY;
 	INSTRUCTION MEMORY_WRITEBACK;
+	INSTRUCTION	NOP;
+	INSTRUCTION TEMP;
+	NOP.func = _NOP;
+	NOP.type = NONE_TYPE;
+	NOP.rawFunction = NULL;
 	do{
 		if(CLK == 0){
+			//Don't ever need to worry about data hazards here
 			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+			//system("PAUSE");
 		}else if(CLK == 1){
+			//Don't *think* we ever need to worry about data hazards here
 			DECODE_EXECUTE = FETCH_DECODE;
+
 			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 			InstructionDecode(&DECODE_EXECUTE);
+			//system("PAUSE");
 		}else if(CLK == 2){
+			//I don't think we can have a data hazard here because there can't be enough instructions in the pipeline yet
 			EXECUTE_MEMORY = DECODE_EXECUTE;
 			DECODE_EXECUTE = FETCH_DECODE;
+
 			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 			InstructionDecode(&DECODE_EXECUTE);
 			InstructionExecute(&EXECUTE_MEMORY);
+			//system("PAUSE");
 		}else if(CLK >= 3){
 			MEMORY_WRITEBACK = EXECUTE_MEMORY;
-			EXECUTE_MEMORY = DECODE_EXECUTE;
+			if(CheckForDataHazard(FETCH_DECODE, DECODE_EXECUTE, EXECUTE_MEMORY, MEMORY_WRITEBACK, false)){
+				cout<<"*******"<<endl;
+				PrintFullInstruction(&EXECUTE_MEMORY);
+				PrintFullInstruction(&DECODE_EXECUTE);
+				TEMP = DECODE_EXECUTE;	//Store the instruction in a temp
+				EXECUTE_MEMORY = NOP;
+				system("PAUSE");
+			}else{
+				EXECUTE_MEMORY = DECODE_EXECUTE;
+			}
 			DECODE_EXECUTE = FETCH_DECODE;
+
 			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 			InstructionDecode(&DECODE_EXECUTE);
 			InstructionExecute(&EXECUTE_MEMORY);
 			InstructionMem(&MEMORY_WRITEBACK);
 			InstructionWriteBack(&MEMORY_WRITEBACK);
+			//system("PAUSE");
 		}
 		CLK++;
 		if(instructionMemory[PC+1] == NULL){	//Without forwarding, this passes when all instructions have been fetched. Then we need 3 more cycles to clear the rest of the instructions
@@ -403,10 +432,25 @@ void InstructionWriteBack(INSTRUCTION *currInstruction){
 		RegisterArray[currInstruction->rt.number].value = currInstruction->tempMem;
 		if(VERBOSE_OUTPUT)
 			cout<<"Rt"<<"($"<<RegisterNumberToName(currInstruction->rt.number)<<"): "<<RegisterArray[currInstruction->rt.number].value<<endl;
+	}else if(currInstruction->type == NONE_TYPE){
+		if(VERBOSE_OUTPUT)
+			cout<<"NOP Instruction"<<endl;
 	}
 	if(VERBOSE_OUTPUT)
 		cout<<"------------------------------\n\n"<<endl;
 	
+}
+
+bool CheckForDataHazard(INSTRUCTION FETCH_DECODE, INSTRUCTION DECODE_EXECUTE, INSTRUCTION EXECUTE_MEMORY, INSTRUCTION MEMORY_WRITEBACK, bool FORWARDING){
+	if(EXECUTE_MEMORY.rd.value == DECODE_EXECUTE.rs.value || (EXECUTE_MEMORY.rd.value == DECODE_EXECUTE.rt.value)){		//The rd of previous instruction is the rt/rs of the next instruction
+		if(FORWARDING){
+		}else{
+			//Insert a NOP
+			return(true);
+		}
+	}else{
+		return(false);
+	}
 }
 
 void RegisterInit(INSTRUCTION *currInstruction){
@@ -444,6 +488,7 @@ void RegisterInit(INSTRUCTION *currInstruction){
 	RegisterArray[t3_reg].number = 0x0A;
 	RegisterArray[t3_reg].value = 0x00;
 }
+
 //So Dr Sherif was saying that if you try to write to the zero register, nothing happens, it just doesn't write to the zero register. To emulate this behavior, I think we should just check
 //the destination register in the WB stage, and if the destination register is the zero register, we just ignore the instruction and carry on. Thoughts? 
 
@@ -523,4 +568,63 @@ string RegisterNumberToName(int regNum){
 		return("Invalid register number!");
 		break;
 	}
+}
+
+void PrintFullInstruction(INSTRUCTION *currInstruction){
+	switch(currInstruction->type){
+	case R_TYPE:
+		switch(currInstruction->func){
+		case ADD:
+			cout<<"ADD";
+			break;
+		case SUB:
+			cout<<"SUB";
+			break;
+		case SLL:
+			cout<<"SLL";
+			break;
+		case SRL:
+			cout<<"SRL";
+			break;
+		case AND:
+			cout<<"AND";
+			break;
+		case NOR:
+			cout<<"NOR";
+			break;
+		case OR:
+			cout<<"OR";
+			break;
+		case XOR:
+			cout<<"XOR";
+			break;
+		}
+		cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", "<<currInstruction->immediate<<endl;
+		break;
+	case I_TYPE:
+		switch(currInstruction->func){
+		case ADDI:
+			cout<<"ADDI";
+			break;
+		case ORI:
+			cout<<"ORI";
+			break;
+		case LW:
+			cout<<"LW";
+			break;
+		case SW:
+			cout<<"SW";
+			break;
+		case BEQ:
+			cout<<"BEQ";
+			break;
+		case BLTZ:
+			cout<<"BLTZ";
+			break;
+		case BLT:
+			cout<<"BLT";
+			break;
+		}
+		cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", "<<currInstruction->immediate<<endl;
+	}	
 }
