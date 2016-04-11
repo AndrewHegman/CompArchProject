@@ -2,6 +2,7 @@
 #include <fstream>
 #include <string>
 #include <typeinfo>
+
 using namespace std;
 
 #define INSTRUCTION_LEN 16
@@ -48,14 +49,7 @@ typedef enum REGISTER_ENUM{
 	t2_reg,
 	t3_reg
 };
-/*
-typedef enum BUFFER{
-	FETCH_DECODE,
-	DECODE_EXECUTE,
-	EXECUTE_MEMORY,
-	MEMORY_WRITEBACK
-};
-*/
+
 struct REGISTER{
 	int number;		//this is the memory position
 	int value;
@@ -67,9 +61,11 @@ struct INSTRUCTION{
 	REGISTER rt;
 	int tempMem;			//This will be used to store the values after the EXE stage and before the WB stages. So lets say you want to do an ADD instruction; the sum of RS and RT will be stored in this register until the WB stage
 	int immediate;
+	int targetAddress;		//I think *technically* this should be the 'immediate' field, but this just makes things easier
 	int rawFunction;		//This is the line of code straight out of the text file
 	OPCODE func;			//This will be the actual function of the line of code. I *think* this is assigned in the InstructionDecode stage
 	INSTRUCTION_TYPE type;
+	bool lastInstruction;	
 	//We can either add a bunch of entries here for the different
 	//control signals
 	//OR we could handle all of that "on the fly"--like we won't use
@@ -78,18 +74,19 @@ struct INSTRUCTION{
 	//idea thoug...
 };
 
-void InstructionFetch(int[], int, INSTRUCTION*);
+int InstructionFetch(int[], int, INSTRUCTION*);
 void InstructionDecode(INSTRUCTION*);
-void InstructionExecute(INSTRUCTION*);
-void InstructionExecute_R(INSTRUCTION*);
-void InstructionExecute_I(INSTRUCTION*);
-void InstructionExecute_J(INSTRUCTION*);
+int InstructionExecute(INSTRUCTION*);
+int InstructionExecute_R(INSTRUCTION*);
+int InstructionExecute_I(INSTRUCTION*);
+int InstructionExecute_J(INSTRUCTION*);
 void InstructionMem(INSTRUCTION*);
-void InstructionWriteBack(INSTRUCTION*);
+bool InstructionWriteBack(INSTRUCTION*);
 void PrintRegisters();
-void RegisterInit(INSTRUCTION*);
+void RegisterInit();
 void ExecuteProgram(int[]);
 void PrintFullInstruction(INSTRUCTION*);
+void InstructionClear(INSTRUCTION*);
 bool CheckForDataHazard(INSTRUCTION, INSTRUCTION, INSTRUCTION, INSTRUCTION, bool);
 
 string RegisterNumberToName(int);
@@ -138,8 +135,9 @@ int main(void){
 		instructionMemory[i] = strtol(ptr, &nptr, 2);
 		i++;
 	}
-	instructionMemory[i+1] = NULL;
-	RegisterInit(&testInstruction);
+	instructionMemory[i] = 2;		//'i' is incremented one more time before the loop ends
+	cout<<instructionMemory[5]<<endl;
+	RegisterInit();
 	ExecuteProgram(instructionMemory);
 	PrintRegisters();
 	system("PAUSE");
@@ -151,89 +149,119 @@ void ExecuteProgram(int instructionMemory[]){
 	int CLK = 0;
 	bool lastInstructionFetched = false;
 	bool DataHazard = false;
+	bool lastInstruction = false;
+	bool notExecuted = false;
 	int continueLoop = 0;
 	INSTRUCTION FETCH_DECODE;
 	INSTRUCTION DECODE_EXECUTE;
 	INSTRUCTION EXECUTE_MEMORY;
 	INSTRUCTION MEMORY_WRITEBACK;
+
 	INSTRUCTION	NOP;
-	INSTRUCTION TEMP;
+
+	INSTRUCTION TEMP_FETCH_DECODE;
+	INSTRUCTION TEMP_DECODE_EXECUTE;
+	INSTRUCTION TEMP_EXECUTE_MEMORY;
+	INSTRUCTION TEMP_MEMORY_WRITEBACK;
 	NOP.func = _NOP;
 	NOP.type = NONE_TYPE;
 	NOP.rawFunction = NULL;
 	do{
 		if(CLK == 0){
 			//Don't ever need to worry about data hazards here
-			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
-			//system("PAUSE");
+			PC += InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 		}else if(CLK == 1){
 			//Don't *think* we ever need to worry about data hazards here
 			DECODE_EXECUTE = FETCH_DECODE;
 
-			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+			PC += InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 			InstructionDecode(&DECODE_EXECUTE);
 			//system("PAUSE");
+			PC++;	//The InstructionExecute() function normally increments the PC, but we haven't gotten there yet
 		}else if(CLK == 2){
 			//I don't think we can have a data hazard here because there can't be enough instructions in the pipeline yet
 			EXECUTE_MEMORY = DECODE_EXECUTE;
 			DECODE_EXECUTE = FETCH_DECODE;
 
-			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+			PC += InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 			InstructionDecode(&DECODE_EXECUTE);
-			InstructionExecute(&EXECUTE_MEMORY);
+			PC += InstructionExecute(&EXECUTE_MEMORY);
 			//system("PAUSE");
 		}else if(CLK >= 3){
-			MEMORY_WRITEBACK = EXECUTE_MEMORY;
-			if(CheckForDataHazard(FETCH_DECODE, DECODE_EXECUTE, EXECUTE_MEMORY, MEMORY_WRITEBACK, false)){
-				cout<<"*******"<<endl;
+			if(!notExecuted){
+				MEMORY_WRITEBACK = EXECUTE_MEMORY;
+			}
+			if(CheckForDataHazard(FETCH_DECODE, DECODE_EXECUTE, EXECUTE_MEMORY, NOP, false)){
+				notExecuted = true;
+				cout<<"**********"<<endl;
 				PrintFullInstruction(&EXECUTE_MEMORY);
 				PrintFullInstruction(&DECODE_EXECUTE);
-				TEMP = DECODE_EXECUTE;	//Store the instruction in a temp
-				EXECUTE_MEMORY = NOP;
+				cout<<"**********"<<endl;
 				system("PAUSE");
-			}else{
-				EXECUTE_MEMORY = DECODE_EXECUTE;
-			}
-			DECODE_EXECUTE = FETCH_DECODE;
+				InstructionExecute(&EXECUTE_MEMORY);
+				InstructionMem(&MEMORY_WRITEBACK);
+				lastInstruction = InstructionWriteBack(&MEMORY_WRITEBACK);
 
-			InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
-			InstructionDecode(&DECODE_EXECUTE);
-			InstructionExecute(&EXECUTE_MEMORY);
-			InstructionMem(&MEMORY_WRITEBACK);
-			InstructionWriteBack(&MEMORY_WRITEBACK);
-			//system("PAUSE");
+				MEMORY_WRITEBACK = EXECUTE_MEMORY;
+				EXECUTE_MEMORY = DECODE_EXECUTE;
+				DECODE_EXECUTE = FETCH_DECODE;
+				
+			}else{
+				notExecuted = false;
+				EXECUTE_MEMORY = DECODE_EXECUTE;
+				DECODE_EXECUTE = FETCH_DECODE;
+
+				PC += InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
+				InstructionDecode(&DECODE_EXECUTE);
+				PC += InstructionExecute(&EXECUTE_MEMORY);
+				InstructionMem(&MEMORY_WRITEBACK);
+				lastInstruction = InstructionWriteBack(&MEMORY_WRITEBACK);		//When the 'last' instruction goes in to this function, it will return with "true" and the while loop will exit
+
+				//system("PAUSE");
+			}
 		}
 		CLK++;
-		if(instructionMemory[PC+1] == NULL){	//Without forwarding, this passes when all instructions have been fetched. Then we need 3 more cycles to clear the rest of the instructions
-			lastInstructionFetched = true;
-			continueLoop++;
-		}else{
+		//I think the following lines are now taken care of by the return value of the InstructionExecute functions
+		/*
+		if(!FETCH_DECODE.lastInstruction){
 			PC++;
 		}
-	}while(continueLoop != 3);
+		*/
+	}while(!lastInstruction);
 }
-void InstructionFetch(int instructionMemory[], int PC, INSTRUCTION *currInstruction){
-	try{
+int InstructionFetch(int instructionMemory[], int PC, INSTRUCTION *currInstruction){
+	int pcIncrement;
+	if(instructionMemory[PC] == 2){		//Checks if the instruction is the 'last' instruction
+		currInstruction->lastInstruction = true;
+		currInstruction->type = NONE_TYPE;
+		pcIncrement = 0;
+	}else{
 		currInstruction->rawFunction = instructionMemory[PC];
-	}catch(out_of_range){
-		currInstruction->rawFunction = NULL;
+		currInstruction->lastInstruction = false;
+		pcIncrement = 1;
 	}
 	if(VERBOSE_OUTPUT){
 		cout<<"----------FETCH----------"<<endl;
-		cout<<"Instruction fetched: "<<currInstruction->rawFunction<<endl;
+		if(currInstruction->lastInstruction)
+			cout<<"No instruction fetched--last instruction"<<endl;
+		else
+			cout<<"Instruction fetched: "<<currInstruction->rawFunction<<endl;
 		cout<<"-------------------------\n\n"<<endl;
 	}
+	return(pcIncrement);
 }
 
 void InstructionDecode(INSTRUCTION *currInstruction){
 	//Get the opcode--always the first 4 bits
-	//But it just so happens that our ENUM perfectly matches the 
-	//opcode number..I THINK
 	if(VERBOSE_OUTPUT){
 		cout<<"----------DECODE----------"<<endl;
-		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
+		if(currInstruction->lastInstruction)
+			cout<<"No instruction"<<endl;
+		else
+			cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
 	}
-	if(currInstruction->rawFunction != NULL){
+	
+	if(!currInstruction->lastInstruction){
 		int temp;
 		temp = ((currInstruction->rawFunction) & 0xF000)>>0x0C;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
 		currInstruction->func = static_cast<OPCODE>(temp);
@@ -243,8 +271,11 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 		if(currInstruction->func == ADD || (currInstruction->func == SUB || (currInstruction->func == SLL || (currInstruction->func == SRL || (currInstruction->func == AND | (currInstruction->func == NOR || (currInstruction->func == OR || (currInstruction->func == XOR)))))))){
 			//Its an R-type
 			currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
+			currInstruction->rs.value = RegisterArray[currInstruction->rs.number].value;
 			currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
+			currInstruction->rt.value = RegisterArray[currInstruction->rt.number].value;
 			currInstruction->rd.number = (currInstruction->rawFunction) & 0x000F;
+			currInstruction->rd.value = RegisterArray[currInstruction->rd.number].value;
 			currInstruction->type = R_TYPE;
 			if(VERBOSE_OUTPUT){
 				cout<<"R-type instruction"<<endl;
@@ -256,8 +287,12 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 		else if(currInstruction->func == ADDI || (currInstruction->func == ORI || (currInstruction->func == LW || (currInstruction->func == SW || (currInstruction->func == BEQ || (currInstruction->func == BLTZ || (currInstruction->func == BLT))))))){
 			//Its an I-type
 			currInstruction->rs.number = ((currInstruction->rawFunction) & 0x0F00)>>8;
+			currInstruction->rs.value = RegisterArray[currInstruction->rs.number].value;
 			currInstruction->rt.number = ((currInstruction->rawFunction) & 0x00F0)>>4;
+			currInstruction->rt.value = RegisterArray[currInstruction->rt.number].value;
 			currInstruction->immediate = (currInstruction->rawFunction) & 0x000F;
+			currInstruction->rd.number = NULL;
+			currInstruction->rd.value = NULL;
 			currInstruction->type = I_TYPE;
 			if(VERBOSE_OUTPUT){
 				cout<<"I-type instruction"<<endl;
@@ -268,13 +303,15 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 		}
 		else if(currInstruction->func == J){
 			//Its an J-type
-			currInstruction->immediate = (currInstruction->rawFunction) & 0x03FF;
+			currInstruction->targetAddress = (currInstruction->rawFunction) & 0x03FF;
 			currInstruction->type = J_TYPE;
 			if(VERBOSE_OUTPUT){
 				cout<<"J-type instruction"<<endl;
-				cout<<"Immediate: "<<currInstruction->immediate<<endl;
+				cout<<"targetAddress: "<<currInstruction->immediate<<endl;
 			}
 		}
+	}else if(currInstruction->lastInstruction){
+		//Nothing to do here
 	}else{
 		currInstruction->func = NONE_OPCODE;
 	}
@@ -282,28 +319,36 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 		cout<<"--------------------------\n\n"<<endl;
 }
 
-void InstructionExecute(INSTRUCTION *currInstruction){
+int InstructionExecute(INSTRUCTION *currInstruction){
+	int returnVal;
 	if(VERBOSE_OUTPUT){
 		cout<<"----------EXECUTE----------"<<endl;
-		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
+		if(currInstruction->lastInstruction)
+			cout<<"No instruction"<<endl;
+		else if(currInstruction->func == _NOP)
+			cout<<"NOP"<<endl;
+		else
+			cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
 	}
 	switch(currInstruction->type){
 		case R_TYPE:
-			InstructionExecute_R(currInstruction);
+			return(InstructionExecute_R(currInstruction));
 			break;
 		case I_TYPE:
-			InstructionExecute_I(currInstruction);
+			return(InstructionExecute_I(currInstruction));
 			break;
 		case J_TYPE:
-			InstructionExecute_J(currInstruction);
+			return(InstructionExecute_J(currInstruction));
 			break;
 		case NONE_TYPE:
-			currInstruction->tempMem = NULL;
+			currInstruction->tempMem = NULL;		
+			return(0);
 			break;
 	}
+	return(0);
 }
 
-void InstructionExecute_R(INSTRUCTION *currInstruction){
+int InstructionExecute_R(INSTRUCTION *currInstruction){
 	switch(currInstruction->func){
 		case ADD:
 			if(VERBOSE_OUTPUT)
@@ -350,47 +395,53 @@ void InstructionExecute_R(INSTRUCTION *currInstruction){
 		cout<<" $"<<RegisterNumberToName(currInstruction->rd.number)<<"("<<RegisterArray[currInstruction->rd.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<endl;
 		cout<<"---------------------------\n\n"<<endl;
 	}
+	return(0);
 }
 
-void InstructionExecute_I(INSTRUCTION *currInstruction){
+int InstructionExecute_I(INSTRUCTION *currInstruction){
+	int returnVal = 0;
 	switch(currInstruction->func){
 		case ADDI:
 			if(VERBOSE_OUTPUT)
 			cout<<"ADDI";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value + currInstruction->immediate;
+			return(0);
 			break;
 		case ORI:
 			if(VERBOSE_OUTPUT)
 				cout<<"ORI";
 			currInstruction->tempMem = RegisterArray[currInstruction->rs.number].value | currInstruction->immediate;
+			return(0);
 			break;
 		case LW:
 			if(VERBOSE_OUTPUT)
 				cout<<"LW";
+			return(0);
 			break;
 		case SW:
 			if(VERBOSE_OUTPUT)
 				cout<<"SW";
+			return(0);
 			break;
 		case BEQ:
 			if(VERBOSE_OUTPUT)
 				cout<<"BEQ";
 			if(RegisterArray[currInstruction->rs.number].value == RegisterArray[currInstruction->rt.number].value){
-				//need to change PC here
+				return(currInstruction->targetAddress);
 			}
 			break;
 		case BLTZ:
 			if(VERBOSE_OUTPUT)
 				cout<<"BLTZ";
 			if(RegisterArray[currInstruction->rs.number].value < zero.value){
-				//need to change PC here
+				return(currInstruction->targetAddress);
 			}
 			break;
 		case BLT:
 			if(VERBOSE_OUTPUT)
 				cout<<"BLT";
 			if(RegisterArray[currInstruction->rs.number].value < RegisterArray[currInstruction->rt.number].value){
-				//need to change PC here
+				return(currInstruction->targetAddress);
 			}
 			break;
 	}
@@ -399,15 +450,19 @@ void InstructionExecute_I(INSTRUCTION *currInstruction){
 		cout<<"---------------------------\n\n"<<endl;
 }
 
-void InstructionExecute_J(INSTRUCTION *currInstruction){
-	//This will only be a jump instruction
-	//need to change PC here
+int InstructionExecute_J(INSTRUCTION *currInstruction){
+	return(currInstruction->targetAddress);
 }
 
 void InstructionMem(INSTRUCTION *currInstruction){
 	if(VERBOSE_OUTPUT){
 		cout<<"----------MEM----------"<<endl;
-		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
+		if(currInstruction->lastInstruction)
+			cout<<"No instruction"<<endl;
+		else if(currInstruction->func = _NOP)
+			cout<<"NOP"<<endl;
+		else
+			cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
 	}
 	if(currInstruction->type == R_TYPE || (currInstruction->type == I_TYPE || (currInstruction->type == NONE_TYPE))){
 		if(VERBOSE_OUTPUT)
@@ -417,10 +472,17 @@ void InstructionMem(INSTRUCTION *currInstruction){
 		cout<<"-----------------------\n\n"<<endl;
 }
 
-void InstructionWriteBack(INSTRUCTION *currInstruction){
+bool InstructionWriteBack(INSTRUCTION *currInstruction){
+	if(currInstruction->lastInstruction)
+		cout<<"Last instruction: "<<endl;
 	if(VERBOSE_OUTPUT){
 		cout<<"----------WRITE BACK----------"<<endl;
-		cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
+		if(currInstruction->lastInstruction)
+			cout<<"No instruction"<<endl;
+		else if(currInstruction->func = _NOP)
+			cout<<"NOP"<<endl;
+		else
+			cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
 	}
 	if(currInstruction->type == R_TYPE ){
 		currInstruction->rd.value = currInstruction->tempMem;	//<--I don't know if this line is necessary anymore
@@ -438,22 +500,30 @@ void InstructionWriteBack(INSTRUCTION *currInstruction){
 	}
 	if(VERBOSE_OUTPUT)
 		cout<<"------------------------------\n\n"<<endl;
-	
+
+	return(currInstruction->lastInstruction);	
 }
 
 bool CheckForDataHazard(INSTRUCTION FETCH_DECODE, INSTRUCTION DECODE_EXECUTE, INSTRUCTION EXECUTE_MEMORY, INSTRUCTION MEMORY_WRITEBACK, bool FORWARDING){
-	if(EXECUTE_MEMORY.rd.value == DECODE_EXECUTE.rs.value || (EXECUTE_MEMORY.rd.value == DECODE_EXECUTE.rt.value)){		//The rd of previous instruction is the rt/rs of the next instruction
-		if(FORWARDING){
+	if(EXECUTE_MEMORY.func != NONE_TYPE && (DECODE_EXECUTE.func != NONE_TYPE && (EXECUTE_MEMORY.rd.number != NULL && (DECODE_EXECUTE.rd.number != NULL)))){
+		if(EXECUTE_MEMORY.rd.number == DECODE_EXECUTE.rs.number || (EXECUTE_MEMORY.rd.number == DECODE_EXECUTE.rt.number)){		//The rd of previous instruction is the rt/rs of the next instruction
+			if(FORWARDING){
+			}else{
+				//Insert a NOP
+				cout<<"EXECUTE_MEMORY Rd: "<<EXECUTE_MEMORY.rd.number<<endl;
+				cout<<"DECODE_EXECUTE Rs: "<<DECODE_EXECUTE.rs.number<<endl;
+				cout<<"DECODE_EXECUTE Rt: "<<DECODE_EXECUTE.rt.number<<endl;
+				return(true);
+			}
 		}else{
-			//Insert a NOP
-			return(true);
+			return(false);
 		}
 	}else{
 		return(false);
 	}
 }
 
-void RegisterInit(INSTRUCTION *currInstruction){
+void RegisterInit(){
 	
 	RegisterArray[zero_reg].number = 0x00;
 	RegisterArray[zero_reg].value = 0x00;
@@ -487,6 +557,25 @@ void RegisterInit(INSTRUCTION *currInstruction){
 
 	RegisterArray[t3_reg].number = 0x0A;
 	RegisterArray[t3_reg].value = 0x00;
+}
+
+void InstructionClear(INSTRUCTION *currInstruction){
+	currInstruction->rd.number = 0;
+	currInstruction->rd.value = 0;
+
+	currInstruction->rs.number = 0;
+	currInstruction->rs.value = 0;
+
+	currInstruction->rt.number = 0;
+	currInstruction->rt.value = 0;
+
+	currInstruction->tempMem = 0;
+	currInstruction->immediate = 0;
+	currInstruction->rawFunction = 0;
+	currInstruction->targetAddress = 0;
+	//no good way to reset OPCODE and INSTRUCTION_TYPE
+
+	currInstruction->lastInstruction = false;	//This should be default
 }
 
 //So Dr Sherif was saying that if you try to write to the zero register, nothing happens, it just doesn't write to the zero register. To emulate this behavior, I think we should just check
@@ -599,7 +688,7 @@ void PrintFullInstruction(INSTRUCTION *currInstruction){
 			cout<<"XOR";
 			break;
 		}
-		cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", "<<currInstruction->immediate<<endl;
+		cout<<" $"<<RegisterNumberToName(currInstruction->rd.number)<<"("<<RegisterArray[currInstruction->rd.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<") ("<<currInstruction->rawFunction<<")"<<endl;
 		break;
 	case I_TYPE:
 		switch(currInstruction->func){
@@ -625,6 +714,6 @@ void PrintFullInstruction(INSTRUCTION *currInstruction){
 			cout<<"BLT";
 			break;
 		}
-		cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", "<<currInstruction->immediate<<endl;
+		cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", "<<currInstruction->immediate<<" ("<<currInstruction->rawFunction<<")"<<endl;
 	}	
 }

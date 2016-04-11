@@ -3,7 +3,7 @@ RegisterToName = {0:"$zero", 1:"$a0", 2:"$a1", 3:"$v0", 4:"$v1", 5:"$v2", 6:"$v3
 
 def TranslateBinary(line):
     if(int(line[:4],2) == 0 or int(line[:4],2) == 1 or int(line[:4],2) == 3 or int(line[:4],2) == 4 or int(line[:4],2) == 5 or int(line[:4],2) == 6 or int(line[:4],2) == 7 or int(line[:4],2) == 9):
-        print(BinaryToOpcode[int(line[:4],2)]+" "+RegisterToName[int(line[5:9],2)]+", "+RegisterToName[int(line[10:14],2)]+", "+RegisterToName[int(line[15:19],2)])
+        print(BinaryToOpcode[int(line[:4],2)]+" "+RegisterToName[int(line[15:19],2)]+", "+RegisterToName[int(line[5:9],2)]+", "+RegisterToName[int(line[10:14],2)])
     elif(int(line[:4],2) == 14):
         print("j "+line[5:])
     elif(int(line[:4],2) == 12 or int(line[:4],2) == 13 or int(line[:4],2) == 15):
@@ -17,4 +17,5 @@ def TranslateBinary(line):
 with open('unFormatted.txt', 'r') as programFile:
     for line in programFile:
         TranslateBinary(line)
+    raw_input("Press any key to continue...")
             
