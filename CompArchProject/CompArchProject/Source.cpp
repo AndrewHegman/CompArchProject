@@ -88,7 +88,7 @@ void ExecuteProgram(int[]);
 void PrintFullInstruction(INSTRUCTION*);
 void InstructionClear(INSTRUCTION*);
 bool CheckForDataHazard(INSTRUCTION, INSTRUCTION, INSTRUCTION, INSTRUCTION, bool);
-
+void CompileInstructions(int*[]);
 string RegisterNumberToName(int);
 
 REGISTER zero;
@@ -177,12 +177,11 @@ void ExecuteProgram(int instructionMemory[]){
 			PC += InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 			InstructionDecode(&DECODE_EXECUTE);
 			//system("PAUSE");
-			PC++;	//The InstructionExecute() function normally increments the PC, but we haven't gotten there yet
+			//PC++;	//The InstructionExecute() function normally increments the PC, but we haven't gotten there yet
 		}else if(CLK == 2){
 			//I don't think we can have a data hazard here because there can't be enough instructions in the pipeline yet
 			EXECUTE_MEMORY = DECODE_EXECUTE;
 			DECODE_EXECUTE = FETCH_DECODE;
-
 			PC += InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
 			InstructionDecode(&DECODE_EXECUTE);
 			PC += InstructionExecute(&EXECUTE_MEMORY);
@@ -198,7 +197,7 @@ void ExecuteProgram(int instructionMemory[]){
 				PrintFullInstruction(&DECODE_EXECUTE);
 				cout<<"**********"<<endl;
 				system("PAUSE");
-				InstructionExecute(&EXECUTE_MEMORY);
+				//InstructionExecute(&EXECUTE_MEMORY);
 				InstructionMem(&MEMORY_WRITEBACK);
 				lastInstruction = InstructionWriteBack(&MEMORY_WRITEBACK);
 
@@ -320,6 +319,7 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 }
 
 int InstructionExecute(INSTRUCTION *currInstruction){
+	//PC is already incremented by 1 from IF, that means that any branching will *most likely* be +1
 	int returnVal;
 	if(VERBOSE_OUTPUT){
 		cout<<"----------EXECUTE----------"<<endl;
@@ -717,3 +717,4 @@ void PrintFullInstruction(INSTRUCTION *currInstruction){
 		cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<RegisterArray[currInstruction->rt.number].value<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<RegisterArray[currInstruction->rs.number].value<<")"<<", "<<currInstruction->immediate<<" ("<<currInstruction->rawFunction<<")"<<endl;
 	}	
 }
+
