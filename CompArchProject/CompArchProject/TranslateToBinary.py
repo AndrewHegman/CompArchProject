@@ -3,12 +3,24 @@ NameToRegister = {"$zero":0, "$a0":1, "$a1":2, "$v0":3, "$v1":4, "$v2":5, "$v3":
 
 def TranslateAssembly(line):
     binaryLine = ""
+    opCode = ""
+    rd = ""
+    rs = ""
+    rt = ""
     for instruction in OpcodeToBinary:
-        if instruction == line[:3]:
-            if line[:4] != "addi" and line[:4] != "bltz":
-                binaryLine += str(bin(OpcodeToBinary[instruction]))[2:].zfill(4)
-        
-    print(binaryLine)
+        if instruction == line[:3] or instruction == line[:4] or instruction == line[:1]:
+            opCode = str(bin(OpcodeToBinary[instruction]))[2:].zfill(4)
+            print(opCode)
+    if line[:3] == "add" or line[:3] == "sub" or line[:3] == "sll" or line[:3] == "srl" or line[:3] == "and" or line[:3] == "nor" or line[:3] == "xor":
+        print(line[4:7])
+        print(str(bin(NameToRegister[line[4:7]]))[2:].zfill(4))
+        rd = str(bin(NameToRegister[line[4:7]]))[2:].zfill(4)
+        rs = str(bin(NameToRegister[line[9:12]]))[2:].zfill(4)
+        rt = str(bin(NameToRegister[line[14:17]]))[2:].zfill(4)
+    print("opcode: "+opCode)
+    print("rd: "+rd)
+    print("rs: "+rs)
+    print("rt: "+rt)
     return(binaryLine)
 
 with open('rawAssembly.txt', 'r') as assemblyFile, open('program.txt', 'w') as programFile:
