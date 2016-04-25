@@ -80,6 +80,7 @@ struct INSTRUCTION{
 	bool lastInstruction;	
 	bool forwardRT;
 	bool forwardRS;
+	bool NOP;
 	//We can either add a bunch of entries here for the different
 	//control signals
 	//OR we could handle all of that "on the fly"--like we won't use
@@ -102,7 +103,10 @@ void ExecuteProgram(int[]);
 void PrintFullInstruction(INSTRUCTION*);
 void InstructionClear(INSTRUCTION*);
 bool CheckForDataHazard(INSTRUCTION*, INSTRUCTION*, INSTRUCTION*, INSTRUCTION*, bool);
+bool CheckForMemoryHazard(INSTRUCTION*, INSTRUCTION*);
 void MemoryInit();
+
+
 string RegisterNumberToName(int);
 
 REGISTER zero;
@@ -209,6 +213,7 @@ void ExecuteProgram(int instructionMemory[]){
 			cout<<"--------------CLK"<<CLK<<"-----------------"<<endl;
 			cout<<"PC: "<<PC<<endl;
 			//I don't think we can have a data hazard here because there can't be enough instructions in the pipeline yet
+			
 			EXECUTE_MEMORY = DECODE_EXECUTE;
 			DECODE_EXECUTE = FETCH_DECODE;
 			PC += InstructionFetch(instructionMemory, PC, &FETCH_DECODE);
@@ -218,7 +223,7 @@ void ExecuteProgram(int instructionMemory[]){
 			if(CheckForDataHazard(&FETCH_DECODE, &DECODE_EXECUTE, &EXECUTE_MEMORY, &MEMORY_WRITEBACK, false)){
 				cout<<"HAZARD DETECTED!"<<endl;
 			}
-
+			
 			cout<<"PC: "<<PC<<endl;
 			cout<<"-------------------------------------------\n\n"<<endl;
 			//system("PAUSE");
@@ -227,6 +232,10 @@ void ExecuteProgram(int instructionMemory[]){
 			cout<<"PC: "<<PC<<endl;
 			if(CheckForDataHazard(&FETCH_DECODE, &DECODE_EXECUTE, &EXECUTE_MEMORY, &MEMORY_WRITEBACK, false)){
 				cout<<"HAZARD DETECTED!"<<endl;
+			}
+			if(CheckForMemoryHazard(&DECODE_EXECUTE, &FETCH_DECODE)){
+				cout<<"Memory hazard!!"<<endl;
+				system("PAUSE");
 			}
 			MEMORY_WRITEBACK = EXECUTE_MEMORY;
 			EXECUTE_MEMORY = DECODE_EXECUTE;
@@ -269,6 +278,7 @@ int InstructionFetch(int instructionMemory[], int PC, INSTRUCTION *currInstructi
 	}
 	currInstruction->forwardRS = false;
 	currInstruction->forwardRT = false;
+	currInstruction->NOP = false;
 	return(pcIncrement);
 }
 
@@ -282,7 +292,7 @@ void InstructionDecode(INSTRUCTION *currInstruction){
 			cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
 	}
 	
-	if(!currInstruction->lastInstruction){
+	if(!currInstruction->lastInstruction && !currInstruction->NOP){
 		int temp;
 		temp = ((currInstruction->rawFunction) & 0xF000)>>0x0C;	//This line is ONLY included to make things more readable. It can be removed later (by placing it on the line below)
 		currInstruction->func = static_cast<OPCODE>(temp);
@@ -353,7 +363,7 @@ int InstructionExecute(INSTRUCTION *currInstruction, int PC){
 		cout<<"----------EXECUTE----------"<<endl;
 		if(currInstruction->lastInstruction)
 			cout<<"No instruction"<<endl;
-		else if(currInstruction->func == _NOP)
+		else if(currInstruction->NOP)
 			cout<<"NOP"<<endl;
 		else
 			cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
@@ -455,8 +465,8 @@ int InstructionExecute_I(INSTRUCTION *currInstruction, int PC){
 		rsValue = RegisterArray[currInstruction->rs.number].value;
 		rtValue = currInstruction->rt.value;
 	}else{
-		rsValue = currInstruction->rs.value;
-		rtValue = currInstruction->rt.value;
+		rsValue = RegisterArray[currInstruction->rs.number].value;
+		rtValue = RegisterArray[currInstruction->rt.number].value;
 	}
 	switch(currInstruction->func){
 		case ADDI:
@@ -566,7 +576,7 @@ bool InstructionWriteBack(INSTRUCTION *currInstruction){
 		cout<<"----------WRITE BACK----------"<<endl;
 		if(currInstruction->lastInstruction)
 			cout<<"No instruction"<<endl;
-		else if(currInstruction->func == _NOP)
+		else if(currInstruction->NOP)
 			cout<<"NOP"<<endl;
 		else
 			cout<<"Instruction: "<<currInstruction->rawFunction<<endl;
@@ -616,45 +626,16 @@ bool CheckForDataHazard(INSTRUCTION *FETCH_DECODE, INSTRUCTION *DECODE_EXECUTE, 
 	if(EXECUTE_MEMORY->func != NONE_TYPE && (DECODE_EXECUTE->func != NONE_TYPE && (EXECUTE_MEMORY_RD != NULL && (DECODE_EXECUTE_RS != NULL)))){
 		if(DECODE_EXECUTE->type == I_TYPE && (DECODE_EXECUTE_RS == EXECUTE_MEMORY_RD)){
 			//Insert a NOP
-			cout<<"EXECUTE_MEMORY Rd: "<<EXECUTE_MEMORY_RD<<endl;
-			cout<<"DECODE_EXECUTE Rs: "<<DECODE_EXECUTE_RS<<endl;
-			cout<<"EXECUTE_MEMORY: "<<EXECUTE_MEMORY->rawFunction<<endl;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rawFunction<<endl;
-
-			cout<<"Before forwarding:"<<endl;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rs.value<<endl;
-			cout<<"After forwarding:"<<endl;
 			DECODE_EXECUTE->rs.value = EXECUTE_MEMORY->tempMem;
 			DECODE_EXECUTE->forwardRS = true;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rs.value<<endl;
 			return(true);
 		}else if(DECODE_EXECUTE->type == R_TYPE && (EXECUTE_MEMORY_RD == DECODE_EXECUTE_RS)){		//The rd of previous instruction is the rt/rs of the next instruction
-			cout<<"EXECUTE_MEMORY Rd: "<<EXECUTE_MEMORY_RD<<endl;
-			cout<<"DECODE_EXECUTE Rs: "<<DECODE_EXECUTE_RS<<endl;
-			cout<<"EXECUTE_MEMORY: "<<EXECUTE_MEMORY->rawFunction<<endl;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rawFunction<<endl;
-
-			cout<<"Before forwarding:"<<endl;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rs.value<<endl;
-			cout<<"After forwarding:"<<endl;
 			DECODE_EXECUTE->rs.value = EXECUTE_MEMORY->tempMem;
 			DECODE_EXECUTE->forwardRS = true;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rs.value<<endl;
-			system("PAUSE");
 			return(true);
 		}else if(DECODE_EXECUTE->type == R_TYPE && (EXECUTE_MEMORY_RD == DECODE_EXECUTE_RT)){
-			cout<<"EXECUTE_MEMORY Rd: "<<EXECUTE_MEMORY_RD<<endl;
-			cout<<"DECODE_EXECUTE Rt: "<<DECODE_EXECUTE_RT<<endl;
-			cout<<"EXECUTE_MEMORY: "<<EXECUTE_MEMORY->rawFunction<<endl;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rawFunction<<endl;
-
-			cout<<"Before forwarding:"<<endl;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rt.value<<endl;
-			cout<<"After forwarding:"<<endl;
 			DECODE_EXECUTE->rt.value = EXECUTE_MEMORY->tempMem;
 			DECODE_EXECUTE->forwardRT = true;
-			cout<<"DECODE_EXECUTE: "<<DECODE_EXECUTE->rt.value<<endl;
-			system("PAUSE");
 			return(true);
 		}else{
 			return(false);
@@ -664,34 +645,52 @@ bool CheckForDataHazard(INSTRUCTION *FETCH_DECODE, INSTRUCTION *DECODE_EXECUTE, 
 	}
 }
 
+bool CheckForMemoryHazard(INSTRUCTION *DECODE_EXECUTE, INSTRUCTION *FETCH_DECODE){
+	//if DECODE_EXECUTE is a LW
+	if(DECODE_EXECUTE->func == LW){
+		if(FETCH_DECODE->type == R_TYPE && (FETCH_DECODE->rs.number == DECODE_EXECUTE->rt.number || (FETCH_DECODE->rt.number == DECODE_EXECUTE->rt.number))){
+			return(true);
+		}else if(FETCH_DECODE->type == I_TYPE && (FETCH_DECODE->rs.number == DECODE_EXECUTE->rt.number)){
+			return(true);
+		}
+	}else if(FETCH_DECODE->func == SW){
+		if(DECODE_EXECUTE->type == R_TYPE && (DECODE_EXECUTE->rd.number == FETCH_DECODE->rt.number)){
+			return(true);
+		}else if(DECODE_EXECUTE->type == I_TYPE && (DECODE_EXECUTE->rt.number == FETCH_DECODE->rt.number)){
+			return(true);
+		}
+	}
+	return(false);
+}
+
 void RegisterInit(){
 	
 	RegisterArray[zero_reg].number = 0x00;
 	RegisterArray[zero_reg].value = 0x00;
 
 	RegisterArray[a0_reg].number = 0x01;
-	RegisterArray[a0_reg].value = 0x00;
+	RegisterArray[a0_reg].value = 0x10;
 
 	RegisterArray[a1_reg].number = 0x02;
-	RegisterArray[a1_reg].value = 0x00;
+	RegisterArray[a1_reg].value = 0x05;
 
 	RegisterArray[v0_reg].number = 0x03;
-	RegisterArray[v0_reg].value = 0x00;
+	RegisterArray[v0_reg].value = 0x40;
 
 	RegisterArray[v1_reg].number = 0x04;
-	RegisterArray[v1_reg].value = 0x4B;
+	RegisterArray[v1_reg].value = 0x1010;
 
 	RegisterArray[v2_reg].number = 0x05;
-	RegisterArray[v2_reg].value = 0x00;
+	RegisterArray[v2_reg].value = 0x0F;
 
 	RegisterArray[v3_reg].number = 0x06;
-	RegisterArray[v3_reg].value = 0x00;
+	RegisterArray[v3_reg].value = 0xF0;
 
 	RegisterArray[t0_reg].number = 0x07;
-	RegisterArray[t0_reg].value = 0x5A;
+	RegisterArray[t0_reg].value = 0x00;
 
 	RegisterArray[t1_reg].number = 0x08;
-	RegisterArray[t1_reg].value = 0xC8;
+	RegisterArray[t1_reg].value = 0x00;
 
 	RegisterArray[t2_reg].number = 0x09;
 	RegisterArray[t2_reg].value = 0x00;
@@ -863,5 +862,4 @@ void MemoryInit(){
 	for(int i=0; i<256;i++){
 		programMemory[i] = 0;
 	}
-	programMemory[105] = 200;
 }
