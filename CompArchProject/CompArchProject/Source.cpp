@@ -157,6 +157,7 @@ int main(void){
 	MemoryInit();
 	ExecuteProgram(instructionMemory);
 	PrintRegisters();
+	cout<<programMemory[210]<<endl;
 	system("PAUSE");
 	return(0);
 }
@@ -497,6 +498,7 @@ int InstructionExecute_I(INSTRUCTION *currInstruction, int PC){
 				cout<<" $"<<RegisterNumberToName(currInstruction->rt.number)<<"("<<rtValue<<")"<<", $"<<RegisterNumberToName(currInstruction->rs.number)<<"("<<rsValue<<")"<<", "<<currInstruction->immediate<<endl;
 				cout<<"---------------------------"<<endl;
 			}
+			currInstruction->targetAddress = currInstruction->immediate + RegisterArray[currInstruction->rs.number].value;
 			return(PC);
 			break;
 		case BEQ:
@@ -677,7 +679,7 @@ void RegisterInit(){
 	RegisterArray[v0_reg].value = 0x00;
 
 	RegisterArray[v1_reg].number = 0x04;
-	RegisterArray[v1_reg].value = 0x00;
+	RegisterArray[v1_reg].value = 0x4B;
 
 	RegisterArray[v2_reg].number = 0x05;
 	RegisterArray[v2_reg].value = 0x00;
@@ -689,7 +691,7 @@ void RegisterInit(){
 	RegisterArray[t0_reg].value = 0x5A;
 
 	RegisterArray[t1_reg].number = 0x08;
-	RegisterArray[t1_reg].value = 0x00;
+	RegisterArray[t1_reg].value = 0xC8;
 
 	RegisterArray[t2_reg].number = 0x09;
 	RegisterArray[t2_reg].value = 0x00;

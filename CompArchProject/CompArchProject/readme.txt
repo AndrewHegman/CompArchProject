@@ -11,3 +11,6 @@ You can use "TranslateBinary.py" to convert the "unFormatted.txt" into readable 
 
 LOAD WORD:
 lw $rt, immediate($rs) --> $rt = programMemory[$rs+immediate]
+
+STORE WORD:
+sw immediate($rs), $rt --> programMemory[$rs+immediate] = $rt 
